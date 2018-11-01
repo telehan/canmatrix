@@ -219,7 +219,7 @@ def load(f, **options):
                     transmitter = None
                 newBo = db.frames.addFrame(
                     Frame(name,
-                          Id=int(Id),
+                          id=int(Id),
                           dlc=size,
                           transmitter=transmitter))
                 #   Frame(int(Id), name, size, transmitter))

@@ -182,7 +182,7 @@ def load(f, **options):
         for frame in jsonData["messages"]:
             #            newframe = Frame(frame["id"],frame["name"],8,None)
             newframe = Frame(frame["name"],
-                             Id=frame["id"],
+                             id=frame["id"],
                              dlc=8)
             if "length" in frame:
                 newframe.size = frame["length"]

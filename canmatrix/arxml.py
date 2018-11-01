@@ -65,13 +65,13 @@ def getBaseTypeOfSignal(signal):
                 createType = "sint64"
             else:
                 createType = "uint64"
-            size = 64                            
+            size = 64
         elif signal.signalsize > 16:
             if signal.is_signed:
                 createType = "sint32"
             else:
                 createType = "uint32"
-            size = 32                            
+            size = 32
         elif signal.signalsize > 8:
             if signal.is_signed:
                 createType = "sint16"
@@ -563,7 +563,7 @@ def dump(dbs, f, **options):
                     swDataDefProps = createSubElement(
                         typeEle, 'SW-DATA-DEF-PROPS')
                     if signal.is_float:
-                        encoding = createSubElement(typeEle, 'ENCODING')                        
+                        encoding = createSubElement(typeEle, 'ENCODING')
                         if signal.signalsize > 32:
                             encoding.text = "DOUBLE"
                         else:
@@ -835,18 +835,18 @@ def dump(dbs, f, **options):
 class arTree(object):
 
     def __init__(self, name="", ref=None):
-        self._name = name
-        self._ref = ref
-        self._array = []
+        self.name = name
+        self.ref = ref
+        self.array = []
 
     def new(self, name, child):
         temp = arTree(name, child)
-        self._array.append(temp)
+        self.array.append(temp)
         return temp
 
     def getChild(self, path):
-        for tem in self._array:
-            if tem._name == path:
+        for tem in self.array:
+            if tem.name == path:
                 return tem
 
 
@@ -885,7 +885,7 @@ def arGetPath(ardict, path):
             else:
                 return None
     if ptr is not None:
-        return ptr._ref
+        return ptr.ref
     else:
         return None
 
@@ -1057,22 +1057,45 @@ def getSignals(signalarray, Bo, arDict, ns, multiplexId):
 
         datdefprops = arGetChild(datatype, "SW-DATA-DEF-PROPS", arDict, ns)
 
+<<<<<<< HEAD
         if compmethod is None:
             compmethod = arGetChild(datdefprops, "COMPU-METHOD", arDict, ns)
+=======
+        compmethod = arGetChild(datdefprops, "COMPU-METHOD", arDict, ns)
+
+        is_signed = False
+>>>>>>> upstream/master
         if compmethod is None:  # AR4
             compmethod = arGetChild(isignal, "COMPU-METHOD", arDict, ns)
             baseType = arGetChild(isignal, "BASE-TYPE", arDict, ns)
             encoding = arGetChild(baseType, "BASE-TYPE-ENCODING", arDict, ns)
             if encoding is not None and encoding.text == "IEEE754":
                 is_float = True
+<<<<<<< HEAD
+=======
+            if baseType is not None:
+                typeName = arGetName(baseType, ns)
+                # Ensure usigned, boolean, and ASCII datatypes stay unsigned
+                if typeName[0].lower() in  ('u','b','a'):
+                    is_signed = False  # unsigned
+                else:
+                   is_signed = True  # signed
+            else:
+                is_signed = False  # unsigned - unless signs are negative, keep everything positive.
+                                
+        #####################################################################################################
+        # Modification to support sourcing the COMPU_METHOD info from the Vector NETWORK-REPRESENTATION-PROPS
+        # keyword definition. 06Jun16
+        #####################################################################################################
+>>>>>>> upstream/master
         if compmethod == None:
             logger.debug('No Compmethod found!! - try alternate scheme 1.')
             networkrep = arGetChild(isignal, "NETWORK-REPRESENTATION-PROPS", arDict, ns)
-            datdefpropsvar = arGetChild(networkrep, "SW-DATA-DEF-PROPS-VARIANTS", arDict, ns)            
+            datdefpropsvar = arGetChild(networkrep, "SW-DATA-DEF-PROPS-VARIANTS", arDict, ns)
             datdefpropscond = arGetChild(datdefpropsvar, "SW-DATA-DEF-PROPS-CONDITIONAL", arDict ,ns)
             if datdefpropscond != None:
                 try:
-                    compmethod = arGetChild(datdefpropscond, "COMPU-METHOD", arDict, ns)            
+                    compmethod = arGetChild(datdefpropscond, "COMPU-METHOD", arDict, ns)
                 except:
                     logger.debug('No valid compu method found for this - check ARXML file!!')
                     compmethod = None
@@ -1116,6 +1139,11 @@ def getSignals(signalarray, Bo, arDict, ns, multiplexId):
             if displayname is not None:
               Unit = displayname.text
             else:
+<<<<<<< HEAD
+=======
+        #####################################################################################################
+        #####################################################################################################
+>>>>>>> upstream/master
               l4 = arGetChild(longname, "L-4", arDict, ns)
               if l4 is not None:
                 Unit = l4.text
@@ -1130,12 +1158,18 @@ def getSignals(signalarray, Bo, arDict, ns, multiplexId):
             initvalue = None
 
         is_little_endian = False
+<<<<<<< HEAD
         if motorolla is not None:
             if motorolla.text == 'MOST-SIGNIFICANT-BYTE-LAST':
                 is_little_endian = True
         else:
             logger.debug('no name byte order for signal' + name.text)
 
+=======
+        if motorolla.text == 'MOST-SIGNIFICANT-BYTE-LAST':
+            is_little_endian = True
+            
+>>>>>>> upstream/master
         if name is None:
             logger.debug('no name for signal given')
         if startBit is None:
@@ -1179,10 +1213,10 @@ def getSignals(signalarray, Bo, arDict, ns, multiplexId):
                     initvalue.text = "0"
                 elif initvalue.text == "true":
                     initvalue.text = "1"
-                newSig._initValue = int(initvalue.text)
-                newSig.addAttribute("GenSigStartValue", str(newSig._initValue))
+                newSig.initValue = int(initvalue.text)
+                newSig.addAttribute("GenSigStartValue", str(newSig.initValue))
             else:
-                newSig._initValue = 0
+                newSig.initValue = 0
 
             for key, value in list(values.items()):
                 newSig.addValues(key, value)
@@ -1211,16 +1245,30 @@ def getFrame(frameTriggering, arDict, multiplexTranslation, ns):
 
         pduFrameMapping[pdu] = arGetName(frameR, ns)
 
+<<<<<<< HEAD
         newFrame = Frame(arGetName(frameR, ns), Id=idNum, dlc=int(dlc.text))
+=======
+        newFrame = Frame(arGetName(frameR, ns),
+                         id=idNum,
+                         dlc=int(dlc.text))
+>>>>>>> upstream/master
         comment = getDesc(frameR, arDict, ns)
         if comment is not None:
             newFrame.addComment(comment)
     else:
         # without frameinfo take short-name of frametriggering and dlc = 8
         logger.debug("Frame %s has no FRAME-REF" % (sn))
+<<<<<<< HEAD
         ipduTriggeringRefs = arGetChild(frameTriggering, "I-PDU-TRIGGERING-REFS", arDict, ns)
         ipduTriggering = arGetChild(ipduTriggeringRefs, "I-PDU-TRIGGERING", arDict, ns)
         pdu = arGetChild(ipduTriggering, "I-PDU", arDict, ns) 
+=======
+        ipduTriggeringRefs = arGetChild(
+            frameTriggering, "I-PDU-TRIGGERING-REFS", arDict, ns)
+        ipduTriggering = arGetChild(
+            ipduTriggeringRefs, "I-PDU-TRIGGERING", arDict, ns)
+        pdu = arGetChild(ipduTriggering, "I-PDU", arDict, ns)
+>>>>>>> upstream/master
         if pdu is None:
             pdu = arGetChild(ipduTriggering, "I-SIGNAL-I-PDU", arDict, ns) ## AR4.2
         dlc = arGetChild(pdu, "LENGTH", arDict, ns)
@@ -1242,7 +1290,7 @@ def getFrame(frameTriggering, arDict, multiplexTranslation, ns):
         multiplexor = Signal("Multiplexor",startBit=selectorStart.text,signalSize=selectorLen.text,
                              is_little_endian=is_little_endian,multiplex="Multiplexor")
 
-        multiplexor._initValue = 0
+        multiplexor.initValue = 0
         newFrame.addSignal(multiplexor)
         staticPart = arGetChild(pdu, "STATIC-PART", arDict, ns)
         ipdu = arGetChild(staticPart, "I-PDU", arDict, ns)
@@ -1556,7 +1604,16 @@ def load(file, **options):
 
         multiplexTranslation = {}
         for frameTrig in canframetrig:
+<<<<<<< HEAD
             db.frames.addFrame(getFrame(frameTrig,arDict,multiplexTranslation,ns))
+=======
+            db.frames.addFrame(
+                getFrame(
+                    frameTrig,
+                    arDict,
+                    multiplexTranslation,
+                    ns))
+>>>>>>> upstream/master
 
         if ignoreClusterInfo == True:
             pass
@@ -1603,7 +1660,7 @@ def load(file, **options):
         for bo in db.frames:
             frame = 0
             for sig in bo.signals:
-                if sig._initValue != 0:
+                if sig.initValue != 0:
                     stbit = sig.getStartbit(bitNumbering=1, startLittle=True)
                     frame |= computeSignalValueInFrame(
                         sig.getStartbit(
@@ -1611,7 +1668,7 @@ def load(file, **options):
                             startLittle=True),
                         sig.signalsize,
                         sig.is_little_endian,
-                        sig._initValue)
+                        sig.initValue)
             fmt = "%0" + "%d" % bo.size + "X"
             bo.addAttribute("GenMsgStartValue", fmt % frame)
         result[busname] = db

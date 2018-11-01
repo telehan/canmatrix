@@ -52,34 +52,42 @@ class FrameList(object):
     """
 
     def __init__(self):
-        self._list = []
+        self.list = []
 
     def addSignalToLastFrame(self, signal):
         """
         Adds a Signal to the last addes Frame, this is mainly for importers
         """
+<<<<<<< HEAD
         lastFrame = self._list[len(self._list) - 1]
         lastFrame.addSignal(signal)
         return lastFrame
+=======
+        self.list[len(self.list) - 1].addSignal(signal)
+>>>>>>> upstream/master
 
     def addFrame(self, frame):
         """
         Adds a Frame
         """
-        self._list.append(frame)
-        return self._list[len(self._list) - 1]
+        self.list.append(frame)
+        return self.list[len(self.list) - 1]
 
     def remove(self, frame):
         """
         Adds a Frame
         """
-        self._list.remove(frame)
+        self.list.remove(frame)
 
     def byId(self, Id):
         """
         returns a Frame-Object by given Frame-ID
         """
+<<<<<<< HEAD
         for test in self._list:
+=======
+        for test in self.list:
+>>>>>>> upstream/master
             if test.id == int(Id):
                 return test
         return None
@@ -88,7 +96,11 @@ class FrameList(object):
         """
         returns a Frame-Object by given Frame-Name
         """
+<<<<<<< HEAD
         for test in self._list:
+=======
+        for test in self.list:
+>>>>>>> upstream/master
             if test.name == Name:
                 return test
         return None
@@ -107,10 +119,10 @@ class FrameList(object):
 
 
     def __iter__(self):
-        return iter(self._list)
+        return iter(self.list)
 
     def __len__(self):
-        return len(self._list)
+        return len(self.list)
 
 
 class BoardUnit(object):
@@ -122,6 +134,7 @@ class BoardUnit(object):
         self.name = name.strip()
         self.attributes = {}
         self.comment = None
+<<<<<<< HEAD
 
     def attribute(self, db, attributeName):
         if attributeName in self.attributes:
@@ -131,6 +144,8 @@ class BoardUnit(object):
                 define = db.buDefines[attributeName]
                 return define.defaultValue
 
+=======
+>>>>>>> upstream/master
 
     def addAttribute(self, attribute, value):
         """
@@ -154,27 +169,41 @@ class BoardUnitList(object):
     """
 
     def __init__(self):
-        self._list = []
+        self.list = []
 
     def add(self, BU):
         """
         add Boardunit/ECU to list
         """
+<<<<<<< HEAD
         if BU.name.strip() not in self._list:
             self._list.append(BU)
+=======
+        if BU.name.strip() not in self.list:
+            self.list.append(BU)
+>>>>>>> upstream/master
 
     def remove(self, BU):
         """
         remove Boardunit/ECU to list
         """
+<<<<<<< HEAD
         if BU.name.strip() not in self._list:
             self._list.remove(BU)
+=======
+        if BU.name.strip() not in self.list:
+            self.list.remove(BU)
+>>>>>>> upstream/master
 
     def byName(self, name):
         """
         returns Boardunit-Object of list by Name
         """
+<<<<<<< HEAD
         for test in self._list:
+=======
+        for test in self.list:
+>>>>>>> upstream/master
             if test.name == name:
                 return test
         return None
@@ -193,10 +222,10 @@ class BoardUnitList(object):
 
 
     def __iter__(self):
-        return iter(self._list)
+        return iter(self.list)
 
     def __len__(self):
-        return len(self._list)
+        return len(self.list)
 
 
 def normalizeValueTable(table):
@@ -212,8 +241,13 @@ class Signal(object):
             is_signed ()
             factor, offset, min, max
             receiver  (Boarunit/ECU-Name)
+<<<<<<< HEAD
             attributes, _values, _unit, _comment
             _multiplex ('Multiplexor' or Number of Multiplex)
+=======
+            attributes, values, unit, comment
+            multiplex ('Multiplexor' or Number of Multiplex)
+>>>>>>> upstream/master
     """
 
     def __init__(self, name, **kwargs):
@@ -236,15 +270,25 @@ class Signal(object):
             ('signalSize', 'signalsize', int, 0),
             ('is_little_endian', 'is_little_endian', bool, True),
             ('is_signed', 'is_signed', bool, True),
+<<<<<<< HEAD
             ('factor', 'factor', float_factory, 1),
             ('offset', 'offset', float_factory, 0),
             ('min', 'min', float_factory, None),
             ('max', 'max', float_factory, None),
+=======
+            ('factor', 'factor', float, 1),
+            ('offset', 'offset', float, 0),
+            ('min', 'min', float, None),
+            ('max', 'max', float, None),
+>>>>>>> upstream/master
             ('unit', 'unit', None, ""),
             ('receiver', 'receiver', None, []),
             ('comment', 'comment', None, None),
             ('multiplex', 'multiplex', multiplex, None),
+<<<<<<< HEAD
             ('mux_value', 'mux_value', None, None),
+=======
+>>>>>>> upstream/master
             ('is_float', 'is_float', bool, False),
             ('enumeration', 'enumeration', str, None),
             ('comments', 'comments', None, {}),
@@ -276,11 +320,23 @@ class Signal(object):
             ))
 
 
+<<<<<<< HEAD
         # in case missing min/max calculation is enabled, be sure it happens
         self.setMin(self.min)
         self.setMax(self.max)
 
         self.name = name
+=======
+        # be shure to calc min/max after parsing all arguments 
+        if self.min is None:
+            self.setMin()
+
+        if self.max is None:
+            self.setMax()
+
+        self.name = name
+
+>>>>>>> upstream/master
 
     @property
     def values(self):
@@ -290,6 +346,7 @@ class Signal(object):
     def values(self, valueTable):
         self._values = normalizeValueTable(valueTable)
 
+<<<<<<< HEAD
     def attribute(self, db, attributeName):
         if attributeName in self.attributes:
             return self.attributes[attributeName]
@@ -298,6 +355,8 @@ class Signal(object):
                 define = db.signalDefines[attributeName]
                 return define.defaultValue
 
+=======
+>>>>>>> upstream/master
     def addComment(self, comment):
         """
         Set comment of Signal
@@ -315,7 +374,12 @@ class Signal(object):
         """
         Add Attribute to Signal
         """
+<<<<<<< HEAD
         self.attributes[attribute] = value
+=======
+        if attribute not in self.attributes:
+            self.attributes[attribute] = value
+>>>>>>> upstream/master
 
     def delAttribute(self, attribute):
         """
@@ -329,7 +393,7 @@ class Signal(object):
         """
         Add Value/Description to Signal
         """
-        self._values[int(value)] = valueName
+        self.values[int(value)] = valueName
 
     def setStartbit(self, startBit, bitNumbering=None, startLittle=None):
         """
@@ -376,7 +440,11 @@ class Signal(object):
 
     def setMin(self, min=None):
         self.min = min
+<<<<<<< HEAD
         if self.calc_min_for_none and self.min is None:
+=======
+        if self.min is None:
+>>>>>>> upstream/master
             self.min = self.calcMin()
 
         return self.min
@@ -389,7 +457,11 @@ class Signal(object):
     def setMax(self, max=None):
         self.max = max
 
+<<<<<<< HEAD
         if self.calc_max_for_none and self.max is None:
+=======
+        if self.max is None:
+>>>>>>> upstream/master
             self.max = self.calcMax()
 
         return self.max
@@ -398,6 +470,7 @@ class Signal(object):
         rawMax = self.calculateRawRange()[1]
 
         return self.offset + (rawMax * self.factor)
+<<<<<<< HEAD
 
     def bitstruct_format(self):
         """Get the bit struct format for this signal
@@ -455,6 +528,8 @@ class Signal(object):
                     break
 
         return value
+=======
+>>>>>>> upstream/master
 
     def __str__(self):
         return self.name
@@ -465,6 +540,7 @@ class SignalGroup(object):
     contains Signals, which belong to signal-group
     """
 
+<<<<<<< HEAD
     def __init__(self, name, Id):
         self.signals = []
         self.name = name
@@ -477,31 +553,62 @@ class SignalGroup(object):
     def delSignal(self, signal):
         if signal in self.signals:
             self.signals[signal].remove()
+=======
+    def __init__(self, name, id):
+        self.members = []
+        self.name = name
+        self.id = id
+
+    def addSignal(self, signal):
+        if signal not in self.members:
+            self.members.append(signal)
+
+    def delSignal(self, signal):
+        if signal in self.members:
+            self.members[signal].remove()
+>>>>>>> upstream/master
 
     def byName(self, name):
         """
         returns Signalobject-Object of list by Name
         """
+<<<<<<< HEAD
         for test in self.signals:
+=======
+        for test in self.members:
+>>>>>>> upstream/master
             if test.name == name:
                 return test
         return None
 
     @property
+<<<<<<< HEAD
     def id(self):
         return self.Id
+=======
+    def signals(self):
+        return self.members
+>>>>>>> upstream/master
 
     def __str__(self):
         return self.name
 
     def __iter__(self):
+<<<<<<< HEAD
         return iter(self.signals)
+=======
+        return iter(self.members)
+>>>>>>> upstream/master
 
 
 class Frame(object):
     """
     contains one Frame with following attributes
+<<<<<<< HEAD
     _Id, 
+=======
+    id,
+>>>>>>> upstream/master
     name,
     transmitter (list of boardunits/ECU-names),
     size (= DLC),
@@ -509,6 +616,10 @@ class Frame(object):
     attributes (list of attributes),
     receiver (list of boardunits/ECU-names),
     extended (Extended Frame = 1),
+<<<<<<< HEAD
+=======
+    signalGroups
+>>>>>>> upstream/master
     comment
     """
 
@@ -516,12 +627,19 @@ class Frame(object):
         self.name = name
             
         args = [
+<<<<<<< HEAD
             ('Id', '_Id', int, 0),
             ('dlc', 'size', int, 0),
             ('transmitter', 'transmitter', None, []),
             ('extended', 'extended', bool, False),
             ('is_complex_multiplexed', 'is_complex_multiplexed', bool, False),
             ('is_fd', 'is_fd', bool, False),
+=======
+            ('id', 'id', int, 0),
+            ('dlc', 'size', int, 0),
+            ('transmitter', 'transmitter', None, []),
+            ('extended', 'extended', bool, False),
+>>>>>>> upstream/master
             ('comment', 'comment', str, None),
             ('signals', 'signals', None, []),
             ('mux_names', 'mux_names', None, {}),
@@ -548,6 +666,7 @@ class Frame(object):
                 ', '.join(kwargs.keys())
             ))
 
+<<<<<<< HEAD
     @property
     def id(self):
         return self._Id
@@ -571,6 +690,8 @@ class Frame(object):
             if attributeName in db.frameDefines:
                 define = db.frameDefines[attributeName]
                 return define.defaultValue
+=======
+>>>>>>> upstream/master
 
     def __iter__(self):
         return iter(self.signals)
@@ -591,7 +712,11 @@ class Frame(object):
         returns signalGroup-object by signalname
         """
         for signalGroup in self.signalGroups:
+<<<<<<< HEAD
             if signalGroup.name == name:
+=======
+            if signalGroup._name == name:
+>>>>>>> upstream/master
                 return signalGroup
         return None
 
@@ -639,7 +764,12 @@ class Frame(object):
         """
         add attribute to attribute-list of frame; If Attribute already exits, modify value
         """
+<<<<<<< HEAD
         self.attributes[attribute] = str(value)
+=======
+        if attribute not in self.attributes:
+            self.attributes[attribute] = str(value)
+>>>>>>> upstream/master
 
     def delAttribute(self, attribute):
         """
@@ -890,6 +1020,7 @@ class Define(object):
             self.min = float(min)
             self.max = float(max)
 
+<<<<<<< HEAD
 
     def addDefault(self, default):
         if default is not None and len(default) > 1 and default[0] == '"' and default[-1] =='"':
@@ -900,6 +1031,13 @@ class Define(object):
         if self.type != 'ENUM':
             return
         self.definition = 'ENUM "' + '","' .join(self.values) +'"'
+=======
+        self.defaultValue = None
+
+    def addDefault(self, default):
+        self.defaultValue = default
+
+>>>>>>> upstream/master
 
 
 class CanMatrix(object):
@@ -924,6 +1062,7 @@ class CanMatrix(object):
         self.globalDefines = {}
         self.buDefines = {}
         self.valueTables = {}
+<<<<<<< HEAD
 
     def __iter__(self):
         return iter(self.frames)
@@ -942,6 +1081,11 @@ class CanMatrix(object):
             if attributeName in self.globalDefines:
                 define = self.globalDefines[attributeName]
                 return define.defaultValue
+=======
+
+    def __iter__(self):
+        return iter(self.frames)
+>>>>>>> upstream/master
 
     def addValueTable(self, name, valueTable):
         self.valueTables[name] = normalizeValueTable(valueTable)
@@ -950,7 +1094,12 @@ class CanMatrix(object):
         """
         add attribute to attribute-list of canmatrix
         """
+<<<<<<< HEAD
         self.attributes[attribute] = value
+=======
+        if attribute not in self.attributes:
+            self.attributes[attribute] = value
+>>>>>>> upstream/master
 
     def addSignalDefines(self, type, definition):
         """
@@ -1032,6 +1181,7 @@ class CanMatrix(object):
 
     def frameByName(self, name):
         return self.frames.byName(name)
+<<<<<<< HEAD
 
     def globFrames(self, globStr):
         return self.frames.glob(globStr)
@@ -1042,6 +1192,11 @@ class CanMatrix(object):
     def globBoardUnits(self, globStr):
         return self.boardUnits.glob(globStr)
 
+=======
+
+    def boardUnitByName(self, name):
+        return self.boardUnits.byName(name)
+>>>>>>> upstream/master
 
     def deleteZeroSignals(self):
         for frame in self.frames:

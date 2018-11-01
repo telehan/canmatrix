@@ -321,14 +321,14 @@ def compareFrame(f1, f2, ignore=None):
         if transmitter not in f1.transmitter:
             result.addChild(compareResult("added", "Frame-Transmitter", f2))
 
-    for sg1 in f1.signalGroups:
+    for sg1 in f1.SignalGroups:
         sg2 = f2.signalGroupbyName(sg1.name)
         if sg2 is None:
             result.addChild(compareResult("removed", "Signalgroup", sg1))
         else:
             result.addChild(compareSignalGroup(sg1, sg2))
 
-    for sg2 in f2.signalGroups:
+    for sg2 in f2.SignalGroups:
         if f1.signalGroupbyName(sg2.name) is None:
             result.addChild(compareResult("added", "Signalgroup", sg2))
     return result
@@ -435,7 +435,7 @@ def compareSignal(s1, s2, ignore=None):
 
 
 def dumpResult(res, depth=0):
-    if res._type is not None and res._result != "equal":
+    if res.type is not None and res.result != "equal":
         for _ in range(0, depth):
             print(" ", end=' ')
         print(res._type + " " + res._result + " ", end=' ')
@@ -447,17 +447,10 @@ def dumpResult(res, depth=0):
                 0] is not None and res._changes[1] is not None:
             for _ in range(0, depth):
                 print(" ", end=' ')
-            print (type(res._changes[0]))
-            if sys.version_info[0] < 3:
-                if type(res._changes[0]) == types.UnicodeType:
-                    res._changes[0] = res._changes[0].encode('ascii', 'ignore')
-                if type(res._changes[1]) == types.UnicodeType:
-                    res._changes[1] = res._changes[1].encode('ascii', 'ignore')
-            else:
-                if type(res._changes[0]) == str:
-                    res._changes[0] = res._changes[0].encode('ascii', 'ignore')
-                if type(res._changes[1]) == str:
-                    res._changes[1] = res._changes[1].encode('ascii', 'ignore')
+            if type(res._changes[0]) == types.UnicodeType:
+                res._changes[0] = res._changes[0].encode('ascii', 'ignore')
+            if type(res._changes[1]) == types.UnicodeType:
+                res._changes[1] = res._changes[1].encode('ascii', 'ignore')
             print("old: " +
                   str(res._changes[0]) +
                   " new: " +
