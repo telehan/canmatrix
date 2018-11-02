@@ -80,13 +80,13 @@ def compareDb(db1, db2, ignore=None):
     for bu1 in db1.boardUnits:
         bu2 = db2.boardUnitByName(bu1.name)
         if bu2 is None:
-            result.addChild(compareResult("deleted", "ecu", bu1))
+            result.addChild(compareResult("deleted", "ECU", bu1))
         else:
             result.addChild(compareBu(bu1, bu2, ignore))
     for bu2 in db2.boardUnits:
         bu1 = db1.boardUnitByName(bu2.name)
         if bu1 is None:
-            result.addChild(compareResult("added", "ecu", bu2))
+            result.addChild(compareResult("added", "ECU", bu2))
 
     if ignore is not None and "DEFINE" in ignore and ignore["DEFINE"] == "*":
         pass
