@@ -116,7 +116,8 @@ def writeExcelLine(worksheet, row, col, rowArray, style):
     return col
 
 def dump(db, file, **options):
-    head_top = ['ID', 'Frame Name', 'Cycle Time [ms]', 'Launch Type', 'Launch Parameter', 'Signal Byte No.', 'Signal Bit No.',
+    #head_top = ['Msg ID', 'Frame Name', 'Cycle Time [ms]', 'Msg Send Type', 'Launch Parameter', 'Signal Byte No.', 'Signal Bit No.',
+    head_top = ['Msg ID', 'Frame Name', 'Cycle Time [ms]', 'Msg Send Type', 'Launch Parameter', 'Signal Byte No.', 'Signal Bit No.',
                 'Signal Name', 'Signal Function', 'Signal Length [Bit]', 'Signal Default', ' Signal Not Available', 'Byteorder']
     head_tail = ['Value',   'Name / Phys. Range', 'Function / Increment Unit']
 
@@ -338,13 +339,13 @@ def load(file, **options):
     index = {}
     for i in range(sh.ncols):
         value = sh.cell(0, i).value
-        if value == "ID":
+        if value == "Msg ID":
             index['ID'] = i
         elif "Frame Name" in value:
             index['frameName'] = i
         elif "Cycle" in value:
             index['cycle'] = i
-        elif "Launch Type" in value:
+        elif "Msg Send Type" in value:
             index['launchType'] = i
         elif "Launch Parameter" in value:
             index['launchParam'] = i

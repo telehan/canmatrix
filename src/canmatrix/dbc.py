@@ -556,7 +556,7 @@ def load(f, **options):
                         receiver=receiver,
                         multiplex=multiplex,
                         **extras
-                    )
+                        )
 
                     if is_complex_multiplexed:
                         tempSig.is_multiplexer = True
