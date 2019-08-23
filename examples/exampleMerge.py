@@ -4,7 +4,8 @@ import sys
 sys.path.append('..')
 
 # importany loads all import filter
-from canmatrix.copy import *
+import canmatrix
+import canmatrix.copy
 import canmatrix.formats
 # fuer Fileio:
 import sys
@@ -14,15 +15,15 @@ import sys
 #
 
 # import of one CAN-Matrix (*.dbc, *.dbf, *.kcd, *.arxml)
-db1 = canmatrix.formats.loadp("first.dbc", flatImport=True)
+db1 = canmatrix.formats.loadp_flat("first.dbc")
 # import of a second CAN-Matrix (*.dbc, *.dbf, *.kcd, *.arxml)
-db2 = canmatrix.formats.loadp("second.dbc", flatImport=True)
+db2 = canmatrix.formats.loadp_flat("second.dbc")
 
 #
 # create target Matrix
 #
 
-db3 = CanMatrix()
+db3 = canmatrix.CanMatrix()
 
 #
 # Here a new Can-Matrix can be  'programmed':
@@ -30,13 +31,13 @@ db3 = CanMatrix()
 #
 
 # Copy Can-ID 1234 from second CAN-Matrix to target-Matrix
-copyFrame(1234, db2, db3)
+canmatrix.copy.copy_frame(1234, db2, db3)
 
 # Copy frame "Engine_123" from first CAN-Matrix to target-Matrix
-copyFrame("Engine_123", db1, db3)
+canmatrix.copy.copy_frame("Engine_123", db1, db3)
 
 # Copy ECU (with all Frames) "Gateway" from first CAN-Matrix to target-Matrix
-copyBUwithFrames("Gateway", db1, db3)
+canmatrix.copy.copy_ecu_with_frames("Gateway", db1, db3)
 
 #
 # -----------------------------------------------------
