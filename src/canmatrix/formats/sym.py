@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # Copyright (c) 2013, Eduard Broecker
 # All rights reserved.
 #
@@ -23,8 +23,7 @@
 # this script exports sym-files from a canmatrix-object
 # sym-files are the can-matrix-definitions of the Peak Systems Tools
 
-from __future__ import absolute_import
-from __future__ import division
+from __future__ import absolute_import, division, print_function
 
 import collections
 import decimal
@@ -39,8 +38,6 @@ import canmatrix
 import canmatrix.utils
 
 logger = logging.getLogger(__name__)
-enum_dict = {}  # type: typing.Dict[str, str]
-enums = "{ENUMS}\n"
 
 
 def default_float_factory(value):  # type: (typing.Any) -> decimal.Decimal
@@ -102,16 +99,28 @@ def format_float(f):  # type: (typing.Any) -> str
 
 
 def create_signal(db, signal):  # type: (canmatrix.CanMatrix, canmatrix.Signal) -> str
-    global enums
-    global enum_dict
     output = ""
-    output += "Var=%s " % signal.name
-    if not signal.is_signed:
-        output += "unsigned "
+    if sys.version_info > (3, 0):
+        quote_name = not signal.name.isidentifier()
     else:
-        output += "signed "
+        from future.utils import isidentifier
+        quote_name = not isidentifier(signal.name)
+    if quote_name:
+        output += 'Var="%s" ' % signal.name
+    else:
+        output += "Var=%s " % signal.name
+    if signal.type_label:
+        output += signal.type_label + " "
+    else:
+        if signal.is_signed:
+            output += "signed "
+        elif signal.is_float:
+            output += "float "
+        else:
+            output += "unsigned "
+
     start_bit = signal.get_startbit()
-    if signal.is_little_endian == 0:
+    if not signal.is_little_endian:
         # Motorola
         output += "%d,%d -m " % (start_bit, signal.size)
     else:
@@ -146,26 +155,13 @@ def create_signal(db, signal):  # type: (canmatrix.CanMatrix, canmatrix.Signal) 
             val_tab_name = signal.name
 
         output += "/e:%s " % val_tab_name
-        if val_tab_name not in enum_dict:
-            enum_dict[val_tab_name] = "enum " + val_tab_name + "(" + ', '.join(
-                '%s="%s"' %
-                (key, val) for (
-                    key, val) in sorted(
-                    signal.values.items())) + ")"
 
-    if "GenSigStartValue" in db.signal_defines:
-        gen_sig_start_val = signal.attribute("GenSigStartValue", db=db)
-        if gen_sig_start_val is not None:
-            factory = (
-                signal.float_factory
-                if signal.is_float
-                else int
-            )
-            default = factory(gen_sig_start_val) * signal.factor  # type: ignore
-            min_ok = signal.min is None or default >= signal.min
-            max_ok = signal.max is None or default <= signal.max
-            if min_ok and max_ok:
-                output += "/d:{} ".format(default)
+
+    default = signal.initial_value  # type: ignore
+    min_ok = signal.min is None or default >= signal.min
+    max_ok = signal.max is None or default <= signal.max
+    if min_ok and max_ok:
+        output += "/d:{} ".format(default)
 
     long_name = signal.attributes.get('LongName')
     if long_name is not None:
@@ -177,22 +173,38 @@ def create_signal(db, signal):  # type: (canmatrix.CanMatrix, canmatrix.Signal) 
     output += "\n"
     return output
 
+def create_enum_from_signal_values(signal):
+    enum_dict = {}
+    if len(signal.values) > 0:
+        val_tab_name = signal.enumeration
+        if val_tab_name is None:
+            val_tab_name = signal.name
+
+        if val_tab_name not in enum_dict:
+            enum_dict[val_tab_name] = "enum " + val_tab_name + "(" + ', '.join(
+                '%s="%s"' %
+                (key, val) for (
+                    key, val) in sorted(
+                    signal.values.items())) + ")"
+    return enum_dict
 
 def dump(db, f, **options):  # type: (canmatrix.CanMatrix, typing.IO, **typing.Any) -> None
     """
     export canmatrix-object as .sym file (compatible to PEAK-Systems)
     """
-    global enum_dict
-    global enums
     sym_encoding = options.get('symExportEncoding', 'iso-8859-1')
+    ignore_encoding_errors = options.get("ignoreExportEncodingErrors", "")
 
     enum_dict = {}
+    for enum_name, enum_values in db.value_tables.items():
+        enum_dict[enum_name] = "enum {}({})".format(enum_name, ', '.join('{}="{}"'.format(*items) for items in sorted(enum_values.items())))
     enums = "{ENUMS}\n"
 
-    header = """FormatVersion=5.0 // Do not edit this line!
-Title=\"canmatrix-Export\"
-"""
-    f.write(header.encode(sym_encoding))
+    header = """\
+FormatVersion=5.0 // Do not edit this line!
+Title=\"{}\"
+""".format(db.attribute("Title", "canmatrix-Export"))
+    f.write(header.encode(sym_encoding, ignore_encoding_errors))
 
     def send_receive(for_frame):
         return (
@@ -258,10 +270,8 @@ Title=\"canmatrix-Export\"
                                 mux_out += id_type
                                 first = 1
                             mux_out += "DLC=%d\n" % frame.size
-                            if "GenMsgCycleTime" in db.frame_defines:
-                                cycle_time = frame.attribute("GenMsgCycleTime", db=db)
-                                if cycle_time is not None:
-                                    mux_out += "CycleTime=" + str(cycle_time) + "\n"
+                            if frame.cycle_time != 0:
+                                mux_out += "CycleTime=" + str(frame.effective_cycle_time) + "\n"
 
                             mux_name = frame.mux_names.get(i, mux_signal.name + "%d" % i)
 
@@ -292,6 +302,7 @@ Title=\"canmatrix-Export\"
                         for signal in frame.signals:
                             if signal.multiplex == i or signal.multiplex is None:
                                 mux_out += create_signal(db, signal)
+                                enum_dict.update(create_enum_from_signal_values(signal))
                         output += mux_out + "\n"
 
             else:
@@ -299,17 +310,16 @@ Title=\"canmatrix-Export\"
                 output += name
                 output += id_type
                 output += "DLC=%d\n" % frame.size
-                if "GenMsgCycleTime" in db.frame_defines:
-                    cycle_time = frame.attribute("GenMsgCycleTime", db=db)
-                    if cycle_time is not None:
-                        output += "CycleTime=" + str(cycle_time) + "\n"
+                if frame.cycle_time != 0:
+                    output += "CycleTime=" + str(frame.effective_cycle_time) + "\n"
                 for signal in frame.signals:
                     output += create_signal(db, signal)
+                    enum_dict.update(create_enum_from_signal_values(signal))
                 output += "\n"
     enums += '\n'.join(sorted(enum_dict.values()))
     # write output file
-    f.write((enums + '\n').encode(sym_encoding))
-    f.write(output.encode(sym_encoding))
+    f.write((enums + '\n').encode(sym_encoding, ignore_encoding_errors))
+    f.write(output.encode(sym_encoding, ignore_encoding_errors))
 
 
 def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatrix
@@ -330,10 +340,8 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
     frame = None
 
     db = canmatrix.CanMatrix()
-    db.add_frame_defines("GenMsgCycleTime", 'INT 0 65535')
     db.add_frame_defines("Receivable", 'BOOL False True')
     db.add_frame_defines("Sendable", 'BOOL False True')
-    db.add_signal_defines("GenSigStartValue", 'FLOAT -3.4E+038 3.4E+038')
     db.add_signal_defines("HexadecimalOutput", 'BOOL False True')
     db.add_signal_defines("DisplayDecimalPlaces", 'INT 0 65535')
     db.add_signal_defines("LongName", 'STR')
@@ -344,7 +352,11 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
             # ignore empty line:
             if line.__len__() == 0:
                 continue
-
+            if line[0:6] == "Title=":
+                title = line[6:].strip('"')
+                db.add_global_defines("Title", "STRING")
+                db.global_defines['Title'].set_default("canmatrix-Export")
+                db.add_attribute("Title", title)
             # switch mode:
             if line[0:7] == "{ENUMS}":
                 mode = Mode.enums
@@ -368,13 +380,16 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                     while not line[5:].strip().endswith(')'):
                         line = line.split('//')[0]
                         if sys.version_info > (3, 0):  # is there a clean way to to it?
-                            line += ' ' + f.readline().decode(sym_import_encoding).strip()
+                            next_line = f.readline().decode(sym_import_encoding)
                         else:
-                            line += ' ' + next(f).decode(sym_import_encoding).strip()
+                            next_line = next(f).decode(sym_import_encoding)
+                        if next_line is "":
+                            raise EOFError("Reached EOF before finding terminator for enum :\"{}\"".format(line))
+                        line += next_line.strip()
                     line = line.split('//')[0]
                     temp_array = line[5:].strip().rstrip(')').split('(', 1)
                     val_table_name = temp_array[0]
-                    split = canmatrix.utils.quote_aware_space_split(temp_array[1])
+                    split = canmatrix.utils.quote_aware_comma_split(temp_array[1])
                     temp_array = [s.rstrip(',') for s in split]
                     temp_val_table = {}
                     for entry in temp_array:
@@ -425,29 +440,31 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                     sig_name = temp_array[0]
 
                     is_float = False
+                    is_ascii = False
+                    enumeration = None
                     if index_offset != 1:
                         is_signed = True
                     else:
                         is_signed = False
 
-                        if temp_array[1] == 'unsigned':
+                        type_label = temp_array[1]
+
+                        if type_label == 'unsigned':
                             pass
-                        elif temp_array[1] == 'bit':
-                            # TODO: actually support bit instead of interpreting as
-                            # an unsigned
+                        elif type_label == 'bit':
                             pass
-                        elif temp_array[1] == 'signed':
+                        elif type_label == 'raw':
+                            pass
+                        elif type_label == 'signed':
                             is_signed = True
-                        elif temp_array[1] in ['float', 'double']:
+                        elif type_label in ['float', 'double']:
                             is_float = True
-                        elif temp_array[1] in ['string']:
-                            # TODO: actually support these variable types instead
-                            # of skipping
-                            print('Variable type \'{}\' found and skipped'
-                                  .format(temp_array[1]))
-                            continue
+                        elif type_label in ['char', 'string']:
+                            is_ascii = True
+                        elif type_label in db.value_tables.keys():
+                            enumeration = type_label
                         else:
-                            raise ValueError('Unknown type \'{}\' found'.format(temp_array[1]))
+                            raise ValueError('Unknown type \'{}\' found'.format(type_label))
 
                     start_bit = int(temp_array[index_offset + 1].split(',')[0])
                     signal_length = int(temp_array[index_offset + 1].split(',')[1])
@@ -527,6 +544,7 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                                 is_little_endian=intel,
                                 is_signed=is_signed,
                                 is_float=is_float,
+                                is_ascii=is_ascii,
                                 factor=factor,
                                 offset=offset,
                                 unit=unit,
@@ -566,6 +584,8 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                             unit=unit,
                             multiplex=multiplexor,
                             comment=comment,
+                            type_label=type_label,
+                            enumeration=enumeration,
                             **extras)
                         if min_value is not None:
                             signal.min = float_factory(min_value)
@@ -580,8 +600,7 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                         # signal.add_comment(comment)
                         # ... (1 / ...) because this somehow made 59.8/0.1 be 598.0 rather than 597.9999999999999
                         if start_value is not None:
-                            start_value = float_factory(start_value) * (1 / float_factory(factor))
-                            signal.add_attribute("GenSigStartValue", str(start_value))
+                            signal.initial_value = float_factory(start_value)
                         frame.add_signal(signal)
                     if long_name is not None:
                         signal.add_attribute("LongName", long_name)
@@ -605,9 +624,7 @@ def load(f, **options):  # type: (typing.IO, **typing.Any) -> canmatrix.CanMatri
                     frame.size = int(line.split('=')[1])
 
                 elif line.startswith('CycleTime'):
-                    frame.add_attribute(
-                        "GenMsgCycleTime",
-                        line.split('=')[1].strip())
+                    frame.cycle_time = int(line.split('=')[1].strip())
                 #        else:
                 #                print line
                 # else:

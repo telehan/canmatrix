@@ -1,6 +1,4 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 # Copyright (c) 2013, Eduard Broecker
 # All rights reserved.
 #
@@ -28,23 +26,21 @@
 
 # TODO: Definitions should be disassembled
 
-from __future__ import division, absolute_import
+from __future__ import absolute_import, division, print_function
 
 import decimal
 import fnmatch
+import itertools
 import logging
 import math
 import struct
 import typing
-from itertools import chain
+import warnings
+from builtins import *
 
-try:
-    from itertools import zip_longest as zip_longest
-except ImportError:
-    from itertools import izip_longest as zip_longest  # type: ignore
-
-from past.builtins import basestring
 import attr
+from future.moves.itertools import zip_longest
+from past.builtins import basestring
 
 import canmatrix.copy
 import canmatrix.types
@@ -70,7 +66,7 @@ class J1939needsExtendedIdetifier(ExceptionTemplate): pass
 
 def arbitration_id_converter(source):  # type: (typing.Union[int, ArbitrationId]) -> ArbitrationId
     """Converter for attrs which accepts ArbitrationId itself or int."""
-    return source if isinstance(source, ArbitrationId) else ArbitrationId.from_compound_integer(source)
+    return source if isinstance(source, ArbitrationId) else  ArbitrationId.from_compound_integer(source)
 
 
 @attr.s
@@ -133,7 +129,8 @@ class Signal(object):
     Signal has following attributes:
 
     * name
-    * start_bit, size (in Bits)
+    * start_bit (internal start_bit, see get/set_startbit also)
+    * size (in Bits)
     * is_little_endian (1: Intel, 0: Motorola)
     * is_signed (bool)
     * factor, offset, min, max
@@ -159,6 +156,8 @@ class Signal(object):
 
     mux_value = attr.ib(default=None)
     is_float = attr.ib(default=False)  # type: bool
+    is_ascii = attr.ib(default=False)  # type: bool
+    type_label = attr.ib(default="")
     enumeration = attr.ib(default=None)  # type: typing.Optional[str]
     comments = attr.ib(factory=dict)  # type: typing.MutableMapping[int, str]
     attributes = attr.ib(factory=dict)  # type: typing.MutableMapping[str, typing.Any]
@@ -169,6 +168,9 @@ class Signal(object):
     # offset = attr.ib(converter=float_factory, default=0.0)  # type: float # ??
     calc_min_for_none = attr.ib(default=True)  # type: bool
     calc_max_for_none = attr.ib(default=True)  # type: bool
+
+    cycle_time = attr.ib(default=0)  # type: int
+    initial_value = attr.ib(converter=float_factory, default=float_factory(0.0))  # type: canmatrix.types.PhysicalValue
 
     min = attr.ib(
         converter=lambda value, float_factory=float_factory: (
@@ -398,7 +400,7 @@ class Signal(object):
         :rtype: int or decimal.Decimal
         """
         if value is None:
-            return int(self.attributes.get('GenSigStartValue', 0))
+            value = self.initial_value
 
         if isinstance(value, basestring):
             for value_key, value_string in self.values.items():
@@ -581,17 +583,25 @@ def pack_bitstring(length, is_float, value, signed):
     return bitstring
 
 
-@attr.s(cmp=False)
+@attr.s
 class ArbitrationId(object):
     standard_id_mask = ((1 << 11) - 1)
     extended_id_mask = ((1 << 29) - 1)
     compound_extended_mask = (1 << 31)
 
     id = attr.ib(default=None)
-    extended = attr.ib(default=None)
+    extended = attr.ib(default=False)  # type: bool
 
     def __attrs_post_init__(self):
-        if self.extended is None or self.extended:
+        if self.extended is None:
+            # Mimicking old behaviour for now -- remove in the future
+            self.extended = True
+            warnings.warn(
+                "Please set 'extended' attribute as a boolean instead of "
+                "None when creating an instance of ArbitrationId class",
+                DeprecationWarning
+            )
+        if self.extended:
             mask = self.extended_id_mask
         else:
             mask = self.standard_id_mask
@@ -607,13 +617,27 @@ class ArbitrationId(object):
     def pgn(self):
         if not self.extended:
             raise J1939needsExtendedIdetifier
+        # PGN is bits 8-25 of the 29-Bit Extended CAN-ID
+        # Made up of PDU-S (8-15), PDU-F (16-23), Data Page (24) & Extended Data Page (25)
+        # If PDU-F >= 240 the PDU-S is interpreted as Group Extension
+        # If PDU-F < 240 the PDU-S is interpreted as a Destination Address
+        _pgn = 0
+        if self.j1939_pdu_format == 2:
+            _pgn += self.j1939_ps
+        _pgn += self.j1939_pf << 8
+        _pgn += self.j1939_dp << 16
+        _pgn += self.j1939_edp << 17
 
-        ps = (self.id >> 8) & 0xFF
-        pf = (self.id >> 16) & 0xFF
-        _pgn = pf << 8
-        if pf >= 240:
-            _pgn += ps
         return _pgn
+
+    @pgn.setter
+    def pgn(self, value):  # type: (int) -> None
+        self.extended = True
+        _pgn = value & 0x3FFFF
+        self.id &= 0xfc0000ff
+        self.id |= (_pgn << 8 & 0x3FFFF00)  # default pgn is None -> mypy reports error
+
+
 
     @property
     def j1939_tuple(self):  # type: () -> typing.Tuple[int, int, int]
@@ -627,7 +651,7 @@ class ArbitrationId(object):
     def j1939_destination(self):
         if not self.extended:
             raise J1939needsExtendedIdetifier
-        if self.j1939_pf < 240:
+        if self.j1939_pdu_format == 1:
             destination = self.j1939_ps
         else:
             destination = None
@@ -638,6 +662,11 @@ class ArbitrationId(object):
         if not self.extended:
             raise J1939needsExtendedIdetifier
         return self.id & 0xFF
+
+    @j1939_source.setter
+    def j1939_source(self, value):  # type: (int) -> None
+        self.extended = True
+        self.id = (self.id & 0xffffff00) | (value & 0xff)
 
     @property
     def j1939_ps(self):
@@ -652,16 +681,31 @@ class ArbitrationId(object):
         return (self.id >> 16) & 0xFF
 
     @property
+    def j1939_pdu_format(self):
+        return 1 if (self.j1939_pf < 240) else 2
+
+    @property
+    def j1939_dp(self):
+        if not self.extended:
+            raise J1939needsExtendedIdetifier
+        return (self.id >> 24) & 0x1
+
+    @property
     def j1939_edp(self):
         if not self.extended:
             raise J1939needsExtendedIdetifier
-        return (self.id >> 24) & 0x03
+        return (self.id >> 25) & 0x1
 
     @property
     def j1939_priority(self):
         if not self.extended:
             raise J1939needsExtendedIdetifier
-        return (self.id >> 25) & 0x7
+        return (self.id >> 26) & 0x7
+
+    @j1939_priority.setter
+    def j1939_priority(self, value):  # type: (int) -> None
+        self.extended = True
+        self.id = (self.id & 0x3ffffff) | ((value & 0x7) << 26)
 
     @property
     def j1939_str(self):  # type: () -> str
@@ -688,16 +732,6 @@ class ArbitrationId(object):
         else:
             return self.id
 
-    def __eq__(self, other):
-        return (
-            self.id == other.id
-            and (
-                self.extended is None
-                or other.extended is None
-                or self.extended == other.extended
-            )
-        )
-
 
 @attr.s(cmp=False)
 class Frame(object):
@@ -722,7 +756,7 @@ class Frame(object):
 
     name = attr.ib(default="")  # type: str
     # mypy Unsupported converter:
-    arbitration_id = attr.ib(converter=arbitration_id_converter, default=arbitration_id_converter(0))  # type: ArbitrationId
+    arbitration_id = attr.ib(converter=arbitration_id_converter, default=0)  # type: ArbitrationId
     size = attr.ib(default=0)  # type: int
     transmitters = attr.ib(factory=list)  # type: typing.MutableSequence[str]
     # extended = attr.ib(default=False)  # type: bool
@@ -735,9 +769,8 @@ class Frame(object):
     receivers = attr.ib(factory=list)  # type: typing.MutableSequence[str]
     signalGroups = attr.ib(factory=list)  # type: typing.MutableSequence[SignalGroup]
 
-    j1939_pgn = attr.ib(default=None)  # type: typing.Optional[int]
-    j1939_source = attr.ib(default=0)  # type: int
-    j1939_prio = attr.ib(default=0)  # type: int
+    cycle_time = attr.ib(default=0)  # type: int
+
     is_j1939 = attr.ib(default=False)  # type: bool
     # ('cycleTime', '_cycleTime', int, None),
     # ('sendType', '_sendType', str, None),
@@ -789,60 +822,53 @@ class Frame(object):
 
     @pgn.setter
     def pgn(self, value):  # type: (int) -> None
-        self.j1939_pgn = value
-        self.recalc_J1939_id()
+        self.arbitration_id.pgn = value
 
     @property
     def priority(self):  # type: () -> int
         """Get J1939 priority."""
-        return self.j1939_prio
+        return self.arbitration_id.j1939_priority
 
     @priority.setter
     def priority(self, value):  # type: (int) -> None
         """Set J1939 priority."""
-        self.j1939_prio = value
-        self.recalc_J1939_id()
+        self.arbitration_id.j1939_priority = value
 
     @property
     def source(self):  # type: () -> int
         """Get J1939 source."""
-        return self.j1939_source
+        return  self.arbitration_id.j1939_source
 
     @source.setter
     def source(self, value):  # type: (int) -> None
         """Set J1939 source."""
-        self.j1939_source = value
-        self.recalc_J1939_id()
+        self.arbitration_id.j1939_source = value
 
-    def recalc_J1939_id(self):  # type: () -> None
-        """Recompute J1939 ID"""
-        self.arbitration_id.id = self.j1939_source & 0xff
-        self.arbitration_id.id += (self.j1939_pgn & 0xffff) << 8  # default pgn is None -> mypy reports error
-        self.arbitration_id.id += (self.j1939_prio & 0x7) << 26
-        self.arbitration_id.extended = True
-        self.is_j1939 = True
 
-    # @property
-    # def cycleTime(self):
-    #    if self._cycleTime is None:
-    #        self._cycleTime = self.attribute("GenMsgCycleTime")
-    #    return self._cycleTime
-    #
+    @property
+    def effective_cycle_time(self):
+        """Calculate effective cycle time for frame, depending on singal cycle times"""
+        min_cycle_time_list = [y for y in [x.cycle_time for x in self.signals] + [self.cycle_time] if y != 0]
+        if len(min_cycle_time_list) == 0:
+            return 0
+        elif len(min_cycle_time_list) == 1:
+            return min_cycle_time_list[0]
+        else:
+            gcd = canmatrix.utils.get_gcd(min_cycle_time_list[0],min_cycle_time_list[1])
+            for i in range(2,len(min_cycle_time_list)):
+                gcd = canmatrix.utils.get_gcd(gcd, min_cycle_time_list[i])
+            return gcd
+        #    return min(min_cycle_time_list)
+
     # @property
     # def sendType(self, db = None):
     #    if self._sendType is None:
     #        self._sendType = self.attribute("GenMsgSendType")
     #    return self._sendType
     #
-    # @cycleTime.setter
-    # def cycleTime(self, value):
-    #    self._cycleTime = value
-    #    self.attributes["GenMsgCycleTime"] = value
-    #
     # @sendType.setter
     # def sendType(self, value):
     #    self._sendType = value
-    #    self.attributes["GenMsgCycleTime"] = value
 
     def attribute(self, attribute_name, db=None, default=None):
         # type: (str, typing.Optional[CanMatrix], typing.Any) -> typing.Any
@@ -973,6 +999,8 @@ class Frame(object):
             self.attributes[attribute] = str(value)
         except UnicodeDecodeError:
             self.attributes[attribute] = value
+        if type(self.attributes[attribute]) == str:
+            self.attributes[attribute] = self.attributes[attribute].strip()
 
     def del_attribute(self, attribute):
         # type: (str) -> typing.Any
@@ -1004,7 +1032,20 @@ class Frame(object):
         for sig in self.signals:
             if sig.get_startbit() + int(sig.size) > max_bit:
                 max_bit = sig.get_startbit() + int(sig.size)
-        self.size = max(self.size, int(math.ceil(max_bit / 8)))
+        max_byte = int(math.ceil(max_bit / 8))
+        self.size = max(self.size, max_byte)
+
+    def fit_dlc(self):
+        """
+            Compute next allowed DLC (length) for current Frame
+        """
+        max_byte = self.size
+        last_size = 8
+        for max_size in [12, 16, 20, 24, 32, 48, 64]:
+            if max_byte > last_size and max_byte < max_size:
+                self.size = max_size
+                break
+            last_size = max_size
 
     def get_frame_layout(self):
         # type: () -> typing.Sequence[typing.Sequence[str]]
@@ -1035,7 +1076,7 @@ class Frame(object):
                     big_bit_signals.append(signal)
 
         little_bits_iter = reversed(tuple(grouper(little_bits, 8)))
-        little_bits = list(chain(*little_bits_iter))
+        little_bits = list(itertools.chain(*little_bits_iter))
 
         return_list = [
             little + big
@@ -1097,7 +1138,7 @@ class Frame(object):
 
                     big_bits[most:least] = bits
         little_bits_iter = reversed(tuple(grouper(little_bits, 8)))
-        little_bits = list(chain(*little_bits_iter))
+        little_bits = list(itertools.chain(*little_bits_iter))
         bitstring = ''.join(
             next(x for x in (l, b, '0') if x is not None)
             # l if l != ' ' else (b if b != ' ' else '0')
@@ -1272,15 +1313,13 @@ class Frame(object):
 
         if self.is_complex_multiplexed:
             decoded_values = dict()
-            filtered_signals = []
-            filtered_signals += self._filter_signals_for_multiplexer(None, None)
+            filtered_signals = self._filter_signals_for_multiplexer(None, None)
 
             multiplex_name = None
             multiplex_value = None
 
             while self._has_sub_multiplexer(multiplex_name):
-                multiplex_name, multiplex_value = self._get_sub_multiplexer(multiplex_name, multiplex_value,
-                                                                      decoded)
+                multiplex_name, multiplex_value = self._get_sub_multiplexer(multiplex_name, multiplex_value, decoded)
                 decoded_values[multiplex_name] = decoded[multiplex_name]
                 filtered_signals += self._filter_signals_for_multiplexer(multiplex_name, multiplex_value)
 
@@ -1321,7 +1360,7 @@ class Define(object):
         :param str definition: definition string. Ex: "INT -5 10"
         """
         definition = definition.strip()
-        self.definition = definition  # type: str
+        self.definition = definition
         self.type = None  # type: typing.Optional[str]
         self.defaultValue = None  # type: typing.Any
 
@@ -1414,6 +1453,9 @@ class CanMatrix(object):
     env_vars = attr.ib(factory=dict)  # type: typing.MutableMapping[str, typing.MutableMapping]
     signals = attr.ib(factory=list)  # type: typing.MutableSequence[Signal]
 
+    baudrate = attr.ib(default=0)  # type:int
+    fd_baudrate = attr.ib(default=0)  # type:int
+
     load_errors = attr.ib(factory=list)  # type: typing.MutableSequence[Exception]
 
     def __iter__(self):  # type: () -> typing.Iterator[Frame]
@@ -1454,10 +1496,11 @@ class CanMatrix(object):
         """
         if attributeName in self.attributes:
             return self.attributes[attributeName]
-        else:
-            if attributeName in self.global_defines:
+        elif attributeName in self.global_defines:
                 define = self.global_defines[attributeName]
                 return define.defaultValue
+        else:
+            return default
 
     def add_value_table(self, name, valueTable):  # type: (str, typing.Mapping) -> None
         """Add named value table.
@@ -1536,43 +1579,48 @@ class CanMatrix(object):
         if name in self.global_defines:
             self.global_defines[name].set_default(value)
 
+    def delete_obsolete_ecus(self):  # type: () -> None
+        """Delete all unused ECUs
+        """
+        used_ecus = [ecu for f in self.frames for ecu in f.transmitters]
+        used_ecus += [ecu for f in self.frames for ecu in f.receivers]
+        used_ecus += [ecu for f in self.frames for s in f.signals for ecu in s.receivers]
+        used_ecus += [ecu for s in self.signals for ecu in s.receivers]
+        ecus_to_delete = [ecu.name for ecu in self.ecus if ecu.name not in used_ecus]
+        for ecu in ecus_to_delete:
+            self.del_ecu(ecu)
+
     def delete_obsolete_defines(self):  # type: () -> None
         """Delete all unused Defines.
 
-        Delete them from frameDefines, buDefines and signalDefines.
+        Delete them from frame_defines, ecu_defines and signal_defines.
         """
         defines_to_delete = set()  # type: typing.Set[str]
-        for frameDef in self.frame_defines:  # type: str
-            found = False
+        for frameDef in self.frame_defines:
             for frame in self.frames:
                 if frameDef in frame.attributes:
-                    found = True
                     break
-            if not found:
+            else:
                 defines_to_delete.add(frameDef)
         for element in defines_to_delete:
             del self.frame_defines[element]
         defines_to_delete = set()
         for ecu_define in self.ecu_defines:
-            found = False
             for ecu in self.ecus:
                 if ecu_define in ecu.attributes:
-                    found = True
                     break
-            if not found:
+            else:
                 defines_to_delete.add(ecu_define)
         for element in defines_to_delete:
             del self.ecu_defines[element]
 
         defines_to_delete = set()
         for signal_define in self.signal_defines:
-            found = False
             for frame in self.frames:
                 for signal in frame.signals:
                     if signal_define in signal.attributes:
-                        found = True
                         break
-            if not found:
+            else:
                 defines_to_delete.add(signal_define)
         for element in defines_to_delete:
             del self.signal_defines[element]
@@ -1717,7 +1765,6 @@ class CanMatrix(object):
         :param str strategy: selected strategy, "max" or "force".
         """
         for frame in self.frames:
-            originalDlc = frame.size  # unused, remove?
             if "max" == strategy:
                 frame.calc_dlc()
             if "force" == strategy:

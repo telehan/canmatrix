@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-
+# -*- coding: utf-8 -*-
 # Copyright (c) 2013, Eduard Broecker
 # All rights reserved.
 #
@@ -27,11 +25,12 @@
 # only (fibex: Field Bus Exchange Format //
 # https://de.wikipedia.org/wiki/Field_Bus_Exchange_Format)
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
 import typing
 from builtins import *
-from lxml import etree
+
+import lxml.etree
 
 import canmatrix
 
@@ -47,20 +46,20 @@ ns_xsi = "{%s}" % xsi
 extension = "xml"
 
 # noinspection PyProtectedMember
-_Element = etree._Element
+_Element = lxml.etree._Element
 
 
 def create_short_name_desc(parent, short_name, desc):
     # type: (_Element, str, str) -> None
-    short_name_elem = etree.SubElement(parent, ns_ho + "SHORT-NAME")
+    short_name_elem = lxml.etree.SubElement(parent, ns_ho + "SHORT-NAME")
     short_name_elem.text = short_name
-    desc_elem = etree.SubElement(parent, ns_ho + "DESC")
+    desc_elem = lxml.etree.SubElement(parent, ns_ho + "DESC")
     desc_elem.text = desc
 
 
 def create_sub_element_fx(parent, element_name, element_text=None):
     # type: (_Element, str, typing.Optional[str]) -> _Element
-    new = etree.SubElement(parent, ns_fx + element_name)
+    new = lxml.etree.SubElement(parent, ns_fx + element_name)
     if element_text is not None:
         new.text = element_text
     return new
@@ -68,7 +67,7 @@ def create_sub_element_fx(parent, element_name, element_text=None):
 
 def create_sub_element_ho(parent, element_name, element_text=None):
     # type: (_Element, str, typing.Optional[str]) -> _Element
-    new = etree.SubElement(parent, ns_ho + element_name)
+    new = lxml.etree.SubElement(parent, ns_ho + element_name)
     if element_text is not None:
         new.text = element_text
     return new
@@ -77,7 +76,7 @@ def create_sub_element_ho(parent, element_name, element_text=None):
 def dump(db, f, **options):
     # type: (canmatrix.CanMatrix, typing.IO, **typing.Any) -> None
     ns_map = {"fx": fx, "ho": ho, "can": can, "xsi": xsi}
-    root = etree.Element(ns_fx + "FIBEX", nsmap=ns_map)
+    root = lxml.etree.Element(ns_fx + "FIBEX", nsmap=ns_map)
     root.attrib[
         '{{{pre}}}schemaLocation'.format(
             pre=xsi)] = 'http://www.asam.net/xml/fbx ..\\..\\xml_schema\\fibex.xsd http://www.asam.net/xml/fbx/can  ..\\..\\xml_schema\\fibex4can.xsd'
@@ -98,7 +97,7 @@ def dump(db, f, **options):
     # CLUSTERS
     #
     clusters = create_sub_element_fx(elements, "CLUSTERS")
-    cluster = etree.SubElement(clusters, ns_fx + "CLUSTER")
+    cluster = lxml.etree.SubElement(clusters, ns_fx + "CLUSTER")
     cluster.set('ID', 'canCluster1')
     create_short_name_desc(cluster, "clusterShort", "clusterDesc")
     create_sub_element_fx(cluster, "SPEED", "500")
@@ -140,6 +139,25 @@ def dump(db, f, **options):
         function_refs = create_sub_element_fx(ecu, "FUNCTION-REFS")
         func_ref = create_sub_element_fx(function_refs, "FUNCTION-REF")
         func_ref.set("ID-REF", "FCT_" + bu.name)
+        
+        connectors = create_sub_element_fx(ecu, "CONNECTORS")
+        connector = create_sub_element_fx(connectors, "CONNECTOR")
+        
+        inputs = create_sub_element_fx(connector, "INPUTS")
+        for frame in db.frames:
+            if bu.name in frame.receivers:
+                input_port = create_sub_element_fx(inputs, "INPUT-PORT")
+                frame_triggering_ref = create_sub_element_fx(input_port, "FRAME-TRIGGERING-REF")
+                frame_triggering_ref.set("ID-REF", "FT_" + frame.name)
+                
+        outputs = create_sub_element_fx(connector, "OUTPUTS")
+        for frame in db.frames:
+            if bu.name in frame.transmitters:
+                input_port = create_sub_element_fx(outputs, "OUTPUT-PORT")
+                frame_triggering_ref = create_sub_element_fx(input_port, "FRAME-TRIGGERING-REF")
+                frame_triggering_ref.set("ID-REF", "FT_" + frame.name)
+                
+        
         # ignore CONTROLERS/CONTROLER
 
     #
@@ -154,9 +172,10 @@ def dump(db, f, **options):
         create_sub_element_fx(pdu, "PDU-TYPE", "APPLICATION")
         signal_instances = create_sub_element_fx(pdu, "SIGNAL-INSTANCES")
         for signal in frame.signals:
+            signal_id = frame.name + "." + signal.name
             signal_instance = create_sub_element_fx(
                 signal_instances, "SIGNAL-INSTANCE")
-            signal_instance.set("ID", "PDUINST_" + signal.name)
+            signal_instance.set("ID", "PDUINST_" + signal_id)
             # startBit: TODO - find out correct BYTEORDER ...
             create_sub_element_fx(signal_instance, "BIT-POSITION",
                                   str(signal.start_bit))
@@ -169,7 +188,7 @@ def dump(db, f, **options):
                 create_sub_element_fx(
                     signal_instance, "IS-HIGH-LOW-BYTE-ORDER", "true")
             signal_ref = create_sub_element_fx(signal_instance, "SIGNAL-REF")
-            signal_ref.set("ID-REF", signal.name)
+            signal_ref.set("ID-REF", "SIG_" + signal_id)
 
     # FRAMES
     #
@@ -177,7 +196,7 @@ def dump(db, f, **options):
     for frame in db.frames:
         frame_element = create_sub_element_fx(frames, "FRAME")
         frame_element.set("ID", "FRAME_" + frame.name)
-        create_short_name_desc(frame_element, "FRAME_" + frame.name, frame.comment)
+        create_short_name_desc(frame_element, frame.name, frame.comment)
         create_sub_element_fx(frame_element, "BYTE-LENGTH", str(frame.size))  # DLC
         create_sub_element_fx(frame_element, "PDU-TYPE", "APPLICATION")
         pdu_instances = create_sub_element_fx(frame_element, "PDU-INSTANCES")
@@ -199,60 +218,69 @@ def dump(db, f, **options):
         input_ports = create_sub_element_fx(function, "INPUT-PORTS")
         for frame in db.frames:
             for signal in frame.signals:
+                signal_id = frame.name + "." + signal.name
                 if bu.name in signal.receivers:
                     input_port = create_sub_element_fx(input_ports, "INPUT-PORT")
-                    input_port.set("ID", "INP_" + signal.name)
-                    desc = etree.SubElement(input_port, ns_ho + "DESC")
+                    input_port.set("ID", "INP_" + signal_id)
+                    desc = lxml.etree.SubElement(input_port, ns_ho + "DESC")
                     desc.text = signal.comment
                     signal_ref = create_sub_element_fx(input_port, "SIGNAL-REF")
-                    signal_ref.set("ID-REF", "SIG_" + signal.name)
+                    signal_ref.set("ID-REF", "SIG_" + signal_id)
 
+        output_ports = create_sub_element_fx(function, "OUTPUT-PORTS")
         for frame in db.frames:
             if bu.name in frame.transmitters:
                 for signal in frame.signals:
-                    output_port = create_sub_element_fx(input_ports, "OUTPUT-PORT")
-                    output_port.set("ID", "OUTP_" + signal.name)
-                    desc = etree.SubElement(output_port, ns_ho + "DESC")
+                    signal_id = frame.name + "." + signal.name
+                    output_port = create_sub_element_fx(output_ports, "OUTPUT-PORT")
+                    output_port.set("ID", "OUTP_" + signal_id)
+                    desc = lxml.etree.SubElement(output_port, ns_ho + "DESC")
                     desc.text = "signalcomment"
                     signal_ref = create_sub_element_fx(output_port, "SIGNAL-REF")
-                    signal_ref.set("ID-REF", "SIG_" + signal.name)
+                    signal_ref.set("ID-REF", "SIG_" + frame.name + "_" + signal_id)
 
     #
     # SIGNALS
     #
+    signals = create_sub_element_fx(elements, "SIGNALS")
     for frame in db.frames:
-        signals = create_sub_element_fx(elements, "SIGNALS")
         for signal in frame.signals:
+            signal_id = frame.name + "." + signal.name
             signal_element = create_sub_element_fx(signals, "SIGNAL")
-            signal_element.set("ID", "SIG_" + signal.name)
+            signal_element.set("ID", "SIG_" + signal_id)
             create_short_name_desc(signal_element, signal.name, signal.comment)
             coding_ref = create_sub_element_fx(signal_element, "CODING-REF")
-            coding_ref.set("ID-REF", "CODING_" + signal.name)
+            coding_ref.set("ID-REF", "CODING_" + signal_id)
 
     #
     # PROCESSING-INFORMATION
     #
-    proc_info = etree.SubElement(elements, ns_fx + "PROCESSING-INFORMATION", nsmap={"ho": ho})
+    proc_info = lxml.etree.SubElement(root, ns_fx + "PROCESSING-INFORMATION", nsmap={"ho": ho})
     unit_spec = create_sub_element_ho(proc_info, "UNIT-SPEC")
     for frame in db.frames:
         for signal in frame.signals:
+            signal_id = frame.name + "." + signal.name
             unit = create_sub_element_ho(unit_spec, "UNIT")
-            unit.set("ID", "UNIT_" + signal.name)
+            unit.set("ID", "UNIT_" + signal_id)
             create_sub_element_ho(unit, "SHORT-NAME", signal.name)
             create_sub_element_ho(unit, "DISPLAY-NAME", signal.unit)
 
     codings = create_sub_element_fx(proc_info, "CODINGS")
     for frame in db.frames:
         for signal in frame.signals:
+            signal_id = frame.name + "." + signal.name
             coding = create_sub_element_fx(codings, "CODING")
-            coding.set("ID", "CODING_" + signal.name)
+            coding.set("ID", "CODING_" + signal_id)
             create_short_name_desc(
                 coding,
                 "CODING_" +
-                signal.name,
+                signal_id,
                 "Coding for " +
-                signal.name)
-            # ignore CODE-TYPE
+                signal_id)
+                
+            coded = create_sub_element_ho(coding, "CODED-TYPE")
+            create_sub_element_ho(coded, "BIT-LENGTH", str(signal.size))
+            
             compu_methods = create_sub_element_ho(coding, "COMPU-METHODS")
             compu_method = create_sub_element_ho(compu_methods, "COMPU-METHOD")
             create_sub_element_ho(
@@ -262,7 +290,7 @@ def dump(db, f, **options):
                 signal.name)
             create_sub_element_ho(compu_method, "CATEGORY", "LINEAR")
             unit_ref = create_sub_element_ho(compu_method, "UNIT-REF")
-            unit_ref.set("ID-REF", "UNIT_" + signal.name)
+            unit_ref.set("ID-REF", "UNIT_" + signal_id)
             compu_internal_to_phys = create_sub_element_ho(
                 compu_method, "COMPU-INTERNAL-TO-PHYS")
             compu_scales = create_sub_element_ho(
@@ -288,4 +316,4 @@ def dump(db, f, **options):
     #
     # requirements = createSubElementFx(elements,  "REQUIREMENTS")
 
-    f.write(etree.tostring(root, pretty_print=True))
+    f.write(lxml.etree.tostring(root, pretty_print=True))

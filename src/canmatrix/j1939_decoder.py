@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
+
+from builtins import *
+
+import attr
+import pathlib2
 
 import canmatrix.formats
-import pathlib2
-import attr
+
 
 @attr.s
 class j1939_decoder(object):
@@ -74,7 +78,6 @@ class j1939_decoder(object):
 
         elif arbitration_id.pgn == canmatrix.ArbitrationId.from_pgn(0xEBFF).pgn:
             # transfer data
-
             self._data = self._data + can_data[1:min(8, self.bytes_left + 1)]
             self.bytes_left = max(self.bytes_left - 7, 0)
 

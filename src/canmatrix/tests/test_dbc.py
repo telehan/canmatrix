@@ -3,7 +3,7 @@ import io
 import textwrap
 import string
 import pytest
-
+import decimal
 import canmatrix.formats.dbc
 
 
@@ -50,8 +50,30 @@ def test_create_attribute_string():
 
 
 def test_create_comment_string():
-    test_string = canmatrix.formats.dbc.create_comment_string("BO_", "ident", "some comment", "utf8", "utf8")
+    test_string = canmatrix.formats.dbc.create_comment_string("BO_", "ident", "some comment", "utf8", "utf8", "")
     assert test_string == b'CM_ BO_ ident "some comment";\n'
+
+def test_parse_comment_from_dbc():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 1 someFrame: 1 someEcu
+         SG_ someSignal: 1|2@0+ (1,0) [0|0] ""  CCL_TEST
+
+        CM_ SG_ 1 someSignal "resistance setting (0-100%)" ; 
+        ''').encode('utf-8'))
+
+    matrix = canmatrix.formats.dbc.load(dbc)
+    assert matrix.frames[0].signals[0].comment == "resistance setting (0-100%)"
+
+def test_parse_multi_line_comment():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 1 someFrame: 1 someEcu
+         SG_ someSignal: 1|2@0+ (1,0) [0|0] ""  CCL_TEST
+
+        CM_ SG_ 1 someSignal "Debug request message from the ECU to the BMS.
+** ignore for now, more definition to be provided in Rev 14 regarding which messages to change if we have this debug flag implemented. " ;
+        ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc)
+    assert matrix.frames[0].signals[0].comment == 'Debug request message from the ECU to the BMS.\n** ignore for now, more definition to be provided in Rev 14 regarding which messages to change if we have this debug flag implemented. '
 
 
 def test_long_frame_name_imports():
@@ -311,11 +333,149 @@ def test_j1939_frametype():
     matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
     assert matrix.frames[0].is_j1939 == False
 
-def test_signal_definition_with_spaces_iss358():
-    dbc = io.BytesIO(textwrap.dedent(u'''\
-    BU_: someOtherEcu
 
-    BO_ 123 someFrame: 1 someOtherEcu
-    SG_ AccSts : 62|3@0+ (1.0, 0.0) [0.0|0.0] "" VDDM
+def test_attributes_with_spaces_before_semicolumn():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+    BO_ 8 Frame_1: 8 Vector__XXX
+    BO_ 9 Frame_2: 8 Vector__XXX
+    BA_DEF_ BO_ "someAttribute" STRING ;
+    BA_ "someAttribute" BO_ 8 "str" ;
+    BA_DEF_DEF_ "someAttribute" "asd" ;
     ''').encode('utf-8'))
     matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+    assert matrix.frames[0].attributes["someAttribute"] == 'str'
+    assert matrix.frames[1].attribute("someAttribute", matrix) == 'asd'
+
+def test_cycle_time_handling():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 17 Frame_1: 8 Vector__XXX
+        SG_ sig2 : 8|8@1- (1,0) [0|0] "" Vector__XXX
+        SG_ sig1 : 0|8@1- (1,0) [0|0] "" Vector__XXX
+        
+        
+        BA_DEF_ BO_  "GenMsgCycleTime" INT 0 3600000;
+        BA_DEF_ SG_  "GenSigCycleTime" INT 0 3600000;
+        BA_DEF_DEF_  "GenMsgCycleTime" 0;
+        BA_DEF_DEF_  "GenSigCycleTime" 0;
+        BA_ "GenMsgCycleTime" BO_ 17 100;
+        BA_ "GenSigCycleTime" SG_ 17 sig2 20;
+        BA_ "GenSigCycleTime" SG_ 17 sig1 10;
+    ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+
+    assert matrix.frames[0].cycle_time == 100
+    assert matrix.frames[0].signal_by_name("sig1").cycle_time == 10
+    assert matrix.frames[0].signal_by_name("sig2").cycle_time == 20
+
+
+#    assert "GenMsgCycleTime" not in matrix.frame_defines
+#    assert "GenSigCycleTime" not in matrix.signal_defines
+
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump(matrix, outdbc, "dbc")
+
+    assert 'BA_ "GenMsgCycleTime" BO_ 17 100;' in outdbc.getvalue().decode('utf8')
+    assert 'BA_ "GenSigCycleTime" SG_ 17 sig2 20;' in outdbc.getvalue().decode('utf8')
+    assert 'BA_ "GenSigCycleTime" SG_ 17 sig1 10;' in outdbc.getvalue().decode('utf8')
+
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump({"aa":matrix}, outdbc, "kcd")
+
+def test_keep_cycle_time_defines():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 17 Frame_1: 8 Vector__XXX
+        SG_ sig1 : 0|8@1- (1,0) [0|0] "" Vector__XXX
+        
+        BA_DEF_ BO_ "GenMsgCycleTime" INT 0 50000 ;
+        BA_DEF_DEF_ "GenMsgCycleTime" 0 ;
+    ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump(matrix, outdbc, "dbc")
+    assert 'BA_DEF_ BO_ "GenMsgCycleTime" INT 0 50000' in outdbc.getvalue().decode('utf8')
+    assert 'BA_DEF_DEF_ "GenMsgCycleTime" 0' in outdbc.getvalue().decode('utf8')
+
+def test_unique_signal_names():
+    db = canmatrix.CanMatrix()
+    frame = canmatrix.Frame("some Frame")
+    frame.add_signal(canmatrix.Signal("signal_name", size=1, start_bit=1))
+    frame.add_signal(canmatrix.Signal("signal_name", size=2, start_bit=9))
+    db.add_frame(frame)
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump(db, outdbc, "dbc")
+    assert "signal_name0" in outdbc.getvalue().decode('utf8')
+    assert "signal_name1" in outdbc.getvalue().decode('utf8')
+
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump(db, outdbc, "dbc", dbcUniqueSignalNames=False)
+    assert "signal_name0" not in outdbc.getvalue().decode('utf8')
+    assert "signal_name1" not in outdbc.getvalue().decode('utf8')
+    assert "signal_name" in outdbc.getvalue().decode('utf8')
+
+def test_signal_inital_value():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 17 Frame_1: 8 Vector__XXX
+        SG_ sig1 : 0|8@1- (1,0) [0|0] "" Vector__XXX
+
+
+        BA_DEF_ SG_  "GenSigStartValue" FLOAT 0 100000000000;
+        BA_ "GenSigStartValue" SG_ 17 sig1 2.7;
+    ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+    assert matrix.frames[0].signal_by_name("sig1").initial_value == decimal.Decimal("2.7")
+#    assert "GenSigStartValue" not in matrix.signal_defines
+
+    outdbc = io.BytesIO()
+    canmatrix.formats.dump(matrix, outdbc, "dbc")
+    assert 'BA_ "GenSigStartValue" SG_ 17 sig1 2.7;' in outdbc.getvalue().decode('utf8')
+
+
+def test_candbpp_startbit():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 1809 MSG: 8 DEV2
+ SG_ SIG1 : 39|4@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG2 : 52|1@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG3 : 51|12@0+ (0.1,0) [0|360] "°"  DEV1
+ SG_ SIG4 : 6|1@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG5 : 5|1@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG6 : 23|3@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG7 : 7|1@0+ (1,0) [0|1] ""  DEV1
+ SG_ SIG8 : 34|11@0+ (0.1,-102.4) [-32|32] "A"  DEV1
+ SG_ SIG9 : 18|11@0+ (0.1,-102.4) [-62.5|62.5] "A"  DEV1
+ SG_ SIG10 : 4|13@0+ (0.1,0) [350|450] "V"  DEV1
+    ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+    # Motorola forward LSB
+    assert matrix.frames[0].signal_by_name("SIG1").get_startbit(True, True) == 36
+    assert matrix.frames[0].signal_by_name("SIG2").get_startbit(True, True) == 52
+    assert matrix.frames[0].signal_by_name("SIG3").get_startbit(True, True) == 56
+    assert matrix.frames[0].signal_by_name("SIG4").get_startbit(True, True) == 6
+    assert matrix.frames[0].signal_by_name("SIG5").get_startbit(True, True) == 5
+    assert matrix.frames[0].signal_by_name("SIG6").get_startbit(True, True) == 21
+    assert matrix.frames[0].signal_by_name("SIG7").get_startbit(True, True) == 7
+    assert matrix.frames[0].signal_by_name("SIG8").get_startbit(True, True) == 40
+    assert matrix.frames[0].signal_by_name("SIG9").get_startbit(True, True) == 24
+    assert matrix.frames[0].signal_by_name("SIG10").get_startbit(True, True) == 8
+    # Motorola forward MSB
+    assert matrix.frames[0].signal_by_name("SIG1").get_startbit(True, False) == 39
+    assert matrix.frames[0].signal_by_name("SIG2").get_startbit(True, False) == 52
+    assert matrix.frames[0].signal_by_name("SIG3").get_startbit(True, False) == 51
+    assert matrix.frames[0].signal_by_name("SIG4").get_startbit(True, False) == 6
+    assert matrix.frames[0].signal_by_name("SIG5").get_startbit(True, False) == 5
+    assert matrix.frames[0].signal_by_name("SIG6").get_startbit(True, False) == 23
+    assert matrix.frames[0].signal_by_name("SIG7").get_startbit(True, False) == 7
+    assert matrix.frames[0].signal_by_name("SIG8").get_startbit(True, False) == 34
+    assert matrix.frames[0].signal_by_name("SIG9").get_startbit(True, False) == 18
+    assert matrix.frames[0].signal_by_name("SIG10").get_startbit(True, False) == 4
+    
+    
+def test_missing_space():
+    dbc = io.BytesIO(textwrap.dedent(u'''\
+        BO_ 17 Frame_1: 8 Vector__XXX
+        SG_ sig1 : 0|8@1-(1,0)[0|0] "" Vector__XXX
+        ''').encode('utf-8'))
+    matrix = canmatrix.formats.dbc.load(dbc, dbcImportEncoding="utf8")
+    assert matrix.frames[0].signals[0].name == "sig1"
+
+

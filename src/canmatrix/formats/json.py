@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # Copyright (c) 2013, Eduard Broecker
 # All rights reserved.
 #
@@ -24,7 +24,7 @@
 # json-files are the can-matrix-definitions of the CANard-project
 # (https://github.com/ericevenchick/CANard)
 
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
 import json
 import sys
@@ -33,20 +33,23 @@ from builtins import *
 
 import canmatrix
 
-extension = 'json'
-
 
 def dump(db, f, **options):
     # type: (canmatrix.CanMatrix, typing.BinaryIO, **str) -> None
 
-    export_canard = options.get('jsonCanard', False)
+    export_canard = options.get('jsonExportCanard', False)
     motorola_bit_format = options.get('jsonMotorolaBitFormat', "lsb")
-    export_all = options.get('jsonAll', False)
+    export_all = options.get('jsonExportAll', False)
+    native_types = options.get('jsonNativeTypes', False)
+    number_converter = float if native_types else str
     additional_frame_columns = [x for x in options.get("additionalFrameAttributes", "").split(",") if x]
 
 
-    export_array = []  # type: typing.List[typing.Union[str, float, list, dict]]
+    export_dict = {}
+    if export_all:
+        export_dict['enumerations'] = db.value_tables
 
+    export_dict['messages'] = []
 
     if export_canard:
         for frame in db.frames:
@@ -60,7 +63,7 @@ def dump(db, f, **options):
                     "bit_length": signal.size,
                     "factor": signal.factor,
                     "offset": signal.offset}
-            export_array.append(
+            export_dict['messages'].append(
                 {"name": frame.name, "id": hex(frame.arbitration_id.id), "signals": signals})
 
     elif export_all is False:
@@ -81,11 +84,11 @@ def dump(db, f, **options):
                     "name": signal.name,
                     "start_bit": start_bit,
                     "bit_length": signal.size,
-                    "factor": str(signal.factor),
-                    "offset": str(signal.offset),
-                    "is_big_endian": signal.is_little_endian == 0,
+                    "factor": number_converter(signal.factor),
+                    "offset": number_converter(signal.offset),
+                    "is_big_endian": signal.is_little_endian is False,
                     "is_signed": signal.is_signed,
-                    "is_float": signal.is_float
+                    "is_float": signal.is_float,
                 })
             symbolic_frame = {"name": frame.name,
                               "id": int(frame.arbitration_id.id),
@@ -98,7 +101,7 @@ def dump(db, f, **options):
             }
             if frame_attributes:  # only add attributes if there are any
                 symbolic_frame["attributes"] = frame_attributes
-            export_array.append(symbolic_frame)
+            export_dict['messages'].append(symbolic_frame)
     else:  # export_all
         for frame in db.frames:
             frame_attributes = {attribute: frame.attribute(attribute, db=db) for attribute in db.frame_defines}
@@ -120,16 +123,18 @@ def dump(db, f, **options):
                     "name": signal.name,
                     "start_bit": start_bit,
                     "bit_length": signal.size,
-                    "factor": str(signal.factor),
-                    "offset": str(signal.offset),
-                    "min": str(signal.min),
-                    "max": str(signal.max),
-                    "is_big_endian": signal.is_little_endian == 0,
+                    "factor": number_converter(signal.factor),
+                    "offset": number_converter(signal.offset),
+                    "min": number_converter(signal.min),
+                    "max": number_converter(signal.max),
+                    "is_big_endian": signal.is_little_endian is False,
                     "is_signed": signal.is_signed,
                     "is_float": signal.is_float,
                     "comment": signal.comment,
                     "attributes": attributes,
-                    "values": values
+                    "values": values,
+                    "is_multiplexer" : signal.is_multiplexer,
+                    "mux_value" : signal.mux_val
                 }
                 if signal.multiplex is not None:
                     symbolic_signal["multiplex"] = signal.multiplex
@@ -137,7 +142,7 @@ def dump(db, f, **options):
                     symbolic_signal["unit"] = signal.unit
                 symbolic_signals.append(symbolic_signal)
 
-            export_array.append(
+            export_dict['messages'].append(
                 {"name": frame.name,
                  "id": int(frame.arbitration_id.id),
                  "is_extended_frame": frame.arbitration_id.extended,
@@ -152,7 +157,7 @@ def dump(db, f, **options):
         temp = f
 
     try:
-        json.dump({"messages": export_array}, temp, sort_keys=True,
+        json.dump(export_dict, temp, sort_keys=True,
                   indent=4, separators=(',', ': '))
     finally:
         if sys.version_info > (3, 0):
@@ -172,6 +177,13 @@ def load(f, **_options):
     else:
 
         json_data = json.load(f)
+
+    if "enumerations" in json_data:
+        for val_tab_name, val_tab_dict in json_data['enumerations'].items():
+            for key, val in val_tab_dict.items():
+                if key.isdigit():
+                    key = int(key)
+                db.value_tables.setdefault(val_tab_name, {})[key] = val
 
     if "messages" in json_data:
         for frame in json_data["messages"]:
@@ -194,8 +206,8 @@ def load(f, **_options):
                     is_little_endian=is_little_endian,
                     is_signed=is_signed,
                     is_float=is_float,
-                    factor=signal["factor"],
-                    offset=signal["offset"]
+                    factor=signal.get("factor", 1),
+                    offset=signal.get("offset", 0)
                 )
 
                 if signal.get("min") is not None:
@@ -208,7 +220,7 @@ def load(f, **_options):
                     new_signal.unit = signal["unit"]
 
                 if signal.get("multiplex", False):
-                    new_signal.unit = signal["multiplex"]
+                    new_signal.multiplex = signal["multiplex"]
 
                 if signal.get("values", False):
                     for key in signal["values"]:
